@@ -1,0 +1,437 @@
+/*
+Serial Program for RC car
+Sends serial strings starting with A and ending with Z, periodically.
+This prompts the C# program to send its serial string.
+Messages are repeatedly sent back and forth between the car and the C# program
+
+Accepts serial strings ending with Z, converts a three digit number sent as a string, into a number
+Expected string format: throttle,steering,slowmode,headlights,Z
+
+INPUT String example: 500,500,F,200,200,Z
+First field: Throttle (centred around 500)
+Second field: Steering (centred around 500)
+Third field: Slowmode - F: Fast, S: Slow (max throttle is halfspeed)
+Fourth field: Camera Pan (centred around 200)
+Fifth field: Camera Tilt (centred around 200)
+Final field: End of message character (Z)
+
+
+OUTPUT string format
+A,500,500,F,200,200,R,Z
+
+First field: Start of message character (A)
+Second Field: Left motor
+Third Field: Right motor
+Fourth field: ServoSelect - O: ombro, C: cotovelo, V: mão_v, H: mão_h, G: garra
+Fifth field: ServoAngulo
+Sixth field: SensorGas
+Seventh field: SensorTemp
+Final field: End of message character (Z)
+*/
+
+// Includes
+#include <Servo.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+// Defines
+#define ONE_WIRE_BUS 47     // Porta do pino de sinal do DS18B20
+#define IN1_R 44 //Azul e Branco
+#define IN2_R 45
+#define IN1_L 12 //Roxo e Cinza
+#define IN2_L 13
+
+// Define uma instancia do oneWire para comunicacao com o sensor
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+DeviceAddress sensor1;
+
+// Variables
+int count = 0;
+int analogic_mq135 = 0;
+char sensorGasString[5]={'\0','\0','\0','\0'};
+char SensorTmpString[5]={'\0','\0','\0','\0'};
+
+//Servo declarations
+Servo camera_H;
+Servo camera_V;
+Servo b_ombro;
+Servo b_cotovelo;
+Servo b_maoV;
+Servo b_maoH;
+Servo b_garra;
+
+//***********************************************************************************************************
+//Initialisation Function
+//***********************************************************************************************************
+
+void setup()
+{
+  // set the digital pin as output and initialize LOW:
+  pinMode(IN1_R, OUTPUT);
+  pinMode(IN2_R, OUTPUT);
+  pinMode(IN1_L, OUTPUT);
+  pinMode(IN2_L, OUTPUT);
+
+  digitalWrite(IN1_R, HIGH);
+  digitalWrite(IN2_R, HIGH);
+  digitalWrite(IN1_L, HIGH);
+  digitalWrite(IN2_L, HIGH);
+
+  pinMode(25, OUTPUT); // ponte h AUX
+  digitalWrite(25, HIGH);
+  pinMode(27, OUTPUT); // ponte h AUX
+  digitalWrite(27, HIGH);
+
+  // Turn the Serial Protocol ON
+  Serial.begin(57600);  //First hardware serial is used for debugging only
+  Serial1.begin(57600); //Arduino Mega 2560 is used, so hardware serial 1 is used
+
+  // Inicia a leitura de sensores de temperatura
+  sensors.begin();
+  sensors.getAddress(sensor1, 0);
+  
+  //Arduino Mega was used, so larger pin numbers were assigned
+  //Configure camera servos and initial angle
+  camera_H.attach(10);
+  camera_V.attach(46);
+
+  //Configure camera servos and initial angle
+  camera_H.write(125);
+  camera_V.write(100);
+
+  //Configure arm servos and initial angle
+  b_ombro.attach(5);
+  b_cotovelo.attach(3);
+  b_maoV.attach(7);
+  b_maoH.attach(6);
+  b_garra.attach(8);
+
+  b_maoH.write(90);
+  delay(50);
+  b_maoV.write(90);
+  delay(50);
+  b_cotovelo.write(90);
+  delay(50);
+  b_ombro.write(180);
+
+  //Configure motors pins initial value
+}
+
+//************************************************************************************************************
+//Main loop
+//************************************************************************************************************
+
+void loop()
+{
+  getstring();
+  delay(50);
+  // Would have preferred to update at 25Hz or higher (delay (40)) but reliability was reduced 
+}
+
+//**************************************************************************************
+//Other Functions
+//**************************************************************************************
+
+// void getstring ()
+// This function sends an output to the C# program periodically, containing a final character "A"
+// This function also receives strings sent via serial
+// It stops receiving serial input when the "Z" character is detected
+
+// Using comma locations in the saved char array, it saves the input throttle and steering
+// values into separate char arrays. It also extracts other information (eg lights)
+// It then writes to the throttle and steering variables (using the atoi function)
+
+void getstring ()
+{
+  char inputstring[19];
+  String testeEntrada;
+  String outputstring;
+  int bytesreceived = 0;
+  int index = 0;
+  int posindex = 0;
+  char motorLVal = '5';
+  char motorRVal = '5';
+  char braco = 'B';
+  char bracostring[4]={'\0','\0','\0'};
+  char panstring[4]={'\0','\0','\0'};
+  char tiltstring[4]={'\0','\0','\0'};
+//  char slowmode;
+//  int throttle_comma = 0;
+  int motorR_comma = 1;
+  int motorL_comma = 3;
+  int braco_comma = 5;
+  int braco_comma_val = 9;
+  int pan_comma = 13;
+  int tilt_comma = 17;
+  int motorR = 500;
+  int motorL = 500;
+//  int cam_pan = 200;
+//  int cam_tilt = 200;
+  int data_valid = 0;
+//  int counter = 0;
+
+//receive and save serial input characters until a new line character is detected, or the char array is full.
+//if received message is greater than 14 characters if (Serial.available() > 18)
+  if (Serial.available()> 0)
+  {
+    //counter = Serial.available();
+    testeEntrada = Serial.readStringUntil ('Y');
+    //testeEntrada = Serial.readString();
+    //Serial.print(testeEntrada);
+    //read bytes until it finds a 'Z' (90), or 19 characters are reached, save into inputstring
+    //inputstring[testeEntrada.length()] = 0;  //make last character 0
+    //Serial.print(testeEntrada.length());
+
+    testeEntrada.toCharArray(inputstring, 19);
+
+    for(int i=0; i < testeEntrada.length();i++)
+    {
+      Serial.print(inputstring[i]);
+    }
+    
+    if (testeEntrada.length() > 16 && inputstring[17]==',') //if (testeEntrada.length() > 18 && inputstring[3]==',' && inputstring[19]=='Y')
+    {
+      data_valid = 1;
+    }
+  }
+  
+  // Comma locations, based on the following input string structure:
+  // L,R,B,BRA,PAM,TIL,Y
+  // where L = motorL, R = motorR, B = archer, BRA = arm value, PAM = camera pan, TIL = camera vertical tilt, Y = check character
+  
+//  motorR_comma = 3;
+//  motorL_comma = 7;
+//  slowmode_comma = 9;
+//  pan_comma = 13;
+//  tilt_comma = 17;
+  
+  //write the motorL characters to a separate character array
+    motorLVal = inputstring[motorR_comma-1];
+
+  if (data_valid == 1)
+  {
+//    Serial.print(motorLString);
+//    Serial.print('\n');
+    motorL = atoi(motorLVal);
+    if (motorL < 4 || motorL > 6)
+    {
+      motorL = 5;
+    }
+  }
+  else
+  {
+    //stop the car if invalid input data is detected
+    motorL = 5;
+  }
+
+//    Serial.print(motorL);
+//    Serial.print('\n');
+//
+//write the motorR characters to a separate character array
+
+    motorRVal = inputstring[braco_comma-1];
+
+ if (data_valid == 1)
+  {
+//    Serial.print(motorLString);
+//    Serial.print('\n');
+    motorR = atoi(motorRVal);
+    if (motorR < 4 || motorR > 6)
+    {
+      motorR = 5;
+    }
+  }
+  else
+  {
+    //stop the car if invalid input data is detected
+    motorR = 5;
+  }
+  
+  //Save the arm character
+  if (data_valid ==1)
+  {
+    braco = inputstring[motorR_comma+1];
+  }
+  else
+  {
+    braco = 'B';
+  }
+  
+  //Write the arm data to a separate character array
+  posindex = 0;
+  for (index=braco_comma+1; (index<pan_comma && posindex < 4); index++)
+  {
+    bracostring[posindex] = inputstring[index];
+    posindex++;
+  }
+  if (data_valid == 1)
+  {
+    cam_pan = atoi(panstring);
+    if (cam_pan < 100 || cam_pan > 300)
+    {
+      cam_pan = 200;
+    }
+  }
+  else 
+  {
+    cam_pan = 200;
+  }
+  
+  //Write the camera tilt data to a separate character array
+  posindex = 0;
+  for (index=pan_comma_val+1; (index<tilt_comma && posindex < 4); index++)
+  {
+    tiltstring[posindex] = inputstring[index];
+    posindex++;
+  }
+  if (data_valid == 1)
+  {
+    cam_tilt = atoi(tiltstring);
+    if (cam_tilt < 100 || cam_tilt > 300)
+    {
+      cam_tilt = 200;
+    }
+  }
+  else 
+  {
+    cam_tilt = 200;
+  }
+
+  //Write the camera pan data to a separate character array
+  posindex = 0;
+  for (index=pan_comma+1; (index<tilt_comma && posindex < 4); index++)
+  {
+    panstring[posindex] = inputstring[index];
+    posindex++;
+  }
+  if (data_valid == 1)
+  {
+    cam_pan = atoi(panstring);
+    if (cam_pan < 100 || cam_pan > 300)
+    {
+      cam_pan = 200;
+    }
+  }
+  else 
+  {
+    cam_pan = 200;
+  }
+
+  process_motorR(motorR);
+  process_motorL(motorL);
+  process_braco(braco);
+  process_cam_pan(cam_pan);
+  process_cam_tilt(cam_tilt);
+  ler_sensor_gases();
+  ler_sensor_temperatura();
+//  
+//  //write the output back to C# program
+//  //A and Z are frame markers, to indicate the start and end of the message
+//  outputstring = "A," + String(throttlestring) + ',' + String(steerstring) + ',' + String(slowmode) + ',' + String(sensorGas) + ',' + String(SensorTmp) + ',' + rumble + ",Z" + '\n';
+// 
+  outputstring = "A," + String(sensorGasString) + ',' + String(SensorTmpString) + ",Z" + '\n';
+// outputstring = "A," + String(600) + ',' + String(600) + ",s," + String(600) + ',' + String(600) + ",Z" + '\n';
+
+//  debug code - output various things through Hardware serial (i.e. Arduino USB cable)
+//  Serial.print (inputstring);
+//  Serial.print ('\n');
+//  Serial.print (bytesreceived);
+//  Serial.print ('\n');
+//  Serial.print (data_valid);
+//  Serial.print ('\n');
+//  Serial.print ('\n');
+//  Serial.print ("  ");
+//  Serial.print (counter);
+//  Serial.print ('\n');
+//  Serial.print (outputstring);
+//  Serial.print ('\n');
+//  Serial.print ('\n');
+//  
+   Serial.print (outputstring);
+//
+  data_valid = 0;
+  //delay (75);
+}
+//
+//void process_steering (int steervalue)
+//{
+//  //C# program sends a value between 400 (full left) to 600 (full right)
+//  //The steering servo expects an angle between 120 (full left) and 60 (full right)
+//  //133 was used due to my car's wonky axles. 133 is full left, and 60 is full right
+//  float steer_angle = map (steervalue, 400, 600, 133, 60);
+//  steer_servo.write(steer_angle);
+//}
+
+void process_motorL (int motorLvalue)
+{
+  //C# program sends a value between 400 (full reverse) to 600 (full forwards)
+  //The speed controller expects a value between 0 (full reverse) and 180 (full forwards)
+//  if (slowmode == 'F')
+//  {
+//    //max throttle is full speed
+//    float throttle_mapped = map (throttlevalue, 400, 600, 0, 180);
+//    throttle_ESC.write(throttle_mapped);
+//  }
+//  else if (slowmode == 'S')
+//  {
+//    //max throttle limited to half speed in slow mode
+//    float throttle_mapped = map (throttlevalue, 400, 600, 45, 135);
+//    throttle_ESC.write(throttle_mapped);
+//  }
+
+    Serial.println(motorLvalue);
+    if (motorLvalue < 500)
+    {
+      digitalWrite(27,HIGH);
+      digitalWrite(IN1_L,HIGH);
+      digitalWrite(IN2_L,LOW);
+    }
+    if (motorLvalue > 500)
+    {
+      digitalWrite(27,HIGH);
+      digitalWrite(IN1_L,LOW);
+      digitalWrite(IN2_L,HIGH);
+    }
+      if (motorLvalue == 500)
+    {
+      digitalWrite(27,LOW);
+    }
+}
+
+//void process_cam_pan (int panvalue, char slowmode)
+//{
+//  //C# program sends a value between 100 (full left) to 300 (full right)
+//  //servo range is limited to 20 degreees to 160 degrees (90 is centre)
+//  //left/right is reversed due to the way the servo is mounted
+//  float pan_mapped = map (panvalue, 100, 300, 159, 19);
+//  camera_pan.write(pan_mapped);
+//}
+//
+//void process_cam_tilt (int tiltvalue)
+//{
+//  //C# program sends a value between 100 (full down) to 300 (full right)
+//  //servo range is limited to 75 degrees to 160 degrees, but want 90 degrees to be the centre
+//  float tilt_mapped = map (tiltvalue, 100, 300, 20, 160);
+//  if (tilt_mapped < 75)
+//  {
+//    tilt_mapped = 75;
+//  }
+//  camera_tilt.write(tilt_mapped);
+//}
+//
+void ler_sensor_gases ()
+{
+  analogic_mq135 = analogRead(0);
+  sprintf(sensorGasString, "%d", analogic_mq135);
+  //Serial.println(analogic_mq135);
+}
+
+void ler_sensor_temperatura ()
+{
+  sensors.requestTemperatures();
+  int tempC = sensors.getTempC(sensor1);
+  sprintf(SensorTmpString, "%d", tempC);
+  //Serial.println(tempC);
+}
+
